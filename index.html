@@ -391,13 +391,36 @@ async function loadGpx(file, restored) {
   $('gpxName').textContent = `${file.name} — ${points.length} points, ${fmtDuration((points[points.length-1].time - points[0].time) / 1000)}`;
 }
 
-function applyLonFlip() {
+function derivePoints() {
   if (!state.rawPoints.length) return;
   state.points = state.flipLon
     ? state.rawPoints.map(p => ({ ...p, lon: -p.lon }))
     : state.rawPoints;
   initMap();
+}
+
+function applyLonFlip() {
+  derivePoints();
   refresh();
+}
+
+// The controls are the source of truth: browsers restore form values across
+// refreshes without firing change events, so state must be re-read from the
+// DOM whenever we act on it — not only inside change handlers.
+function syncFromControls() {
+  const o = parseFloat($('offsetInput').value);
+  if (!isNaN(o) && o !== state.offset) {
+    state.offset = o;
+    $('offsetSlider').value = o;
+  }
+  const sp = parseFloat($('speedInput').value);
+  if (sp > 0) state.speed = sp;
+  const flip = $('flipLonInput').checked;
+  if (flip !== state.flipLon) {
+    state.flipLon = flip;
+    derivePoints();
+  }
+  $('anchorTime').disabled = document.querySelector('input[name="anchor"]:checked').value !== 'video';
 }
 
 // ---------- Map ----------
@@ -450,8 +473,11 @@ function updateDot() {
 
 // ---------- Controls ----------
 function setOffset(v, fromSlider) {
+  // Quantize to 0.1ms so the input can display the exact state value —
+  // syncFromControls() reads it back, so display and state must not diverge.
+  v = Math.round(v * 10000) / 10000;
   state.offset = v;
-  $('offsetInput').value = Math.round(v * 10) / 10;
+  $('offsetInput').value = v;
   const slider = $('offsetSlider');
   if (!fromSlider) {
     // Grow the slider range if the value escapes it
@@ -500,6 +526,7 @@ function overlapRange() {
 }
 
 function refresh() {
+  syncFromControls();
   updateDot();
   const ready = state.videoReady && state.points.length > 1;
   $('coverage').hidden = !ready;
@@ -687,6 +714,9 @@ function toLocalInputValue(d) {
 
 setStatus('Select a video and a GPX file to begin.');
 restoreSession();
+// Browser form restoration can repopulate controls shortly after load without
+// firing events; one late refresh picks those values up.
+window.addEventListener('load', () => setTimeout(refresh, 200));
 </script>
 </body>
 </html>
