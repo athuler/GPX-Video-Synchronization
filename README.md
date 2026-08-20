@@ -22,6 +22,7 @@ Choose how the exported timestamps are anchored:
 ### Advanced settings
 
 - **GPX speed multiplier** — for timelapse videos: how many GPX seconds pass per video second (e.g. `8` for an 8× timelapse). The map dot honors it, and the export compresses timestamps by this factor.
+- **Negate longitude** — fixes the Insta360 Studio bug that drops the minus sign from longitudes (the route appears mirrored east–west). Applies to both the map preview and the exported file.
 
 ## Requirements
 

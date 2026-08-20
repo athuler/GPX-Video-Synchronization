@@ -193,6 +193,10 @@
       <input type="number" id="speedInput" min="0.01" step="0.5" value="1">
       <span class="hint">GPX seconds per video second — e.g. 8 for an 8× timelapse video. The export compresses timestamps by this factor.</span>
     </div>
+    <div class="adv-row" style="margin-top:0.6rem;">
+      <label><input type="checkbox" id="flipLonInput"> Negate longitude</label>
+      <span class="hint">Fixes the Insta360 Studio bug that drops the minus sign from longitudes (route appears mirrored). Applies to the map and the export.</span>
+    </div>
   </div>
 </details>
 
@@ -222,9 +226,11 @@ const state = {
   videoReady: false,     // metadata loaded (duration known)
   gpxDoc: null,          // parsed XML Document (kept pristine for export)
   gpxFileName: null,
-  points: [],            // [{lat, lon, time(ms epoch)}] sorted by time
+  rawPoints: [],         // [{lat, lon, time(ms epoch)}] as parsed, sorted by time
+  points: [],            // rawPoints with the longitude flip applied (if enabled)
   offset: 0,             // seconds: gpxTime(t) = gpx0 + offset + t*speed
   speed: 1,              // GPX seconds per video second
+  flipLon: false,        // negate longitudes (Insta360 Studio sign bug)
 };
 
 const $ = id => document.getElementById(id);
@@ -301,8 +307,16 @@ async function loadGpx(file) {
   points.sort((a, b) => a.time - b.time);
   state.gpxDoc = doc;
   state.gpxFileName = file.name;
-  state.points = points;
+  state.rawPoints = points;
+  applyLonFlip();
   $('gpxName').textContent = `${file.name} — ${points.length} points, ${fmtDuration((points[points.length-1].time - points[0].time) / 1000)}`;
+}
+
+function applyLonFlip() {
+  if (!state.rawPoints.length) return;
+  state.points = state.flipLon
+    ? state.rawPoints.map(p => ({ ...p, lon: -p.lon }))
+    : state.rawPoints;
   initMap();
   refresh();
 }
@@ -373,6 +387,11 @@ $('offsetSlider').addEventListener('input', e => setOffset(parseFloat(e.target.v
 $('offsetInput').addEventListener('change', e => setOffset(parseFloat(e.target.value) || 0));
 document.querySelectorAll('.nudges button').forEach(btn =>
   btn.addEventListener('click', () => setOffset(state.offset + parseFloat(btn.dataset.nudge))));
+
+$('flipLonInput').addEventListener('change', e => {
+  state.flipLon = e.target.checked;
+  applyLonFlip();
+});
 
 $('speedInput').addEventListener('change', e => {
   const v = parseFloat(e.target.value);
@@ -474,6 +493,17 @@ $('exportBtn').addEventListener('click', () => {
 
   // Work on a clone so repeated exports stay independent
   const doc = state.gpxDoc.cloneNode(true);
+
+  // Negate longitudes before trimming/boundary interpolation so the inserted
+  // points are computed from corrected values. Toggling the sign character
+  // preserves the original decimal precision exactly.
+  if (state.flipLon) {
+    for (const el of doc.querySelectorAll('trkpt, wpt, rtept')) {
+      const lon = el.getAttribute('lon');
+      if (lon !== null) el.setAttribute('lon', lon.startsWith('-') ? lon.slice(1) : '-' + lon);
+    }
+  }
+
   const segs = Array.from(doc.getElementsByTagName('trkseg'));
   let kept = 0;
 
