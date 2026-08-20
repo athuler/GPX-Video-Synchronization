@@ -9,7 +9,8 @@ Open `index.html` in a browser (directly, or via any static server such as `pyth
 1. **Select a video** and a **GPX file** (click or drag-and-drop).
 2. Play or scrub the video — the red dot follows the corresponding position on the map.
 3. Adjust the **GPX time offset** (slider, number field, or nudge buttons from ±0.1s to ±60s) until the dot matches what the video shows. Positive offset = the video starts later in the GPX recording. The coverage bar shows how the video span overlaps the GPX track.
-4. Click **Export GPX** to download a retimed copy, trimmed to exactly the video's time span (interpolated points are added at the exact start/end boundaries). Elevation, heart rate, and other extensions are preserved.
+4. While playing, the map zooms in and stays locked on the current location; drag the map to look around freely (the next play re-locks). The **🧭 Rotate with travel** toggle on the map (off by default) rotates the map so the direction of travel points up.
+5. Click **Export GPX** to download a retimed copy, trimmed to exactly the video's time span (interpolated points are added at the exact start/end boundaries). Elevation, heart rate, and other extensions are preserved.
 
 ### Export timestamp anchoring
 
