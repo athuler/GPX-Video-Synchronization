@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPX ↔ Video Sync</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: #d8dbe0;
+    --text: #1c1e21;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --track: #9ca3af;
+    --ok: #16a34a;
+    --warn: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 1rem;
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
+
+  .pickers { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .drop {
+    flex: 1 1 260px;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 0.9rem 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop:hover, .drop.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { display: block; font-size: 0.95rem; }
+  .drop span { color: var(--muted); font-size: 0.8rem; }
+  .drop .filename { color: var(--accent); font-size: 0.8rem; display: block; margin-top: 0.2rem; word-break: break-all; }
+  .drop input { display: none; }
+
+  .previews { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .previews > div {
+    flex: 1 1 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 300px;
+    display: flex;
+  }
+  video { width: 100%; max-height: 420px; background: #000; display: block; }
+  #map { width: 100%; min-height: 300px; }
+  .placeholder {
+    margin: auto; color: var(--muted); font-size: 0.9rem; padding: 2rem; text-align: center;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .panel h2 { font-size: 0.95rem; margin: 0 0 0.6rem; }
+
+  .offset-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .offset-row input[type="range"] { flex: 1 1 200px; }
+  .offset-row input[type="number"] { width: 7.5rem; padding: 0.3rem 0.4rem; }
+  .nudges { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.6rem; }
+  .nudges button {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .nudges button:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+  .coverage { margin-top: 0.8rem; }
+  .coverage-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.2rem; }
+  .coverage-track { position: relative; height: 30px; }
+  .coverage-bar { position: absolute; height: 10px; border-radius: 5px; }
+  .bar-gpx { top: 0; background: var(--track); }
+  .bar-video { top: 14px; background: var(--accent); }
+  .bar-overlap { top: 0; height: 24px; background: rgba(37, 99, 235, 0.12); border: 1px solid rgba(37, 99, 235, 0.35); border-radius: 4px; }
+  .coverage-legend { font-size: 0.72rem; color: var(--muted); margin-top: 0.25rem; }
+  .coverage-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin: 0 0.25rem 0 0.7rem; }
+  .coverage-legend .sw:first-child { margin-left: 0; }
+
+  details.advanced { margin-bottom: 1rem; }
+  details.advanced summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); }
+  details.advanced .panel { margin-top: 0.5rem; margin-bottom: 0; }
+  .adv-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.9rem; }
+  .adv-row input[type="number"] { width: 6rem; padding: 0.3rem 0.4rem; }
+  .hint { font-size: 0.78rem; color: var(--muted); }
+
+  fieldset { border: none; padding: 0; margin: 0 0 0.7rem; }
+  fieldset label { display: block; font-size: 0.88rem; margin-bottom: 0.35rem; }
+  fieldset .hint { margin-left: 1.45rem; display: block; }
+  #anchorTimeWrap { margin: 0.2rem 0 0.4rem 1.45rem; }
+  #anchorTime { padding: 0.3rem 0.4rem; }
+
+  #exportBtn {
+    padding: 0.5rem 1.2rem;
+    font-size: 0.95rem;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  #exportBtn:disabled { background: var(--track); cursor: not-allowed; }
+  #exportMsg { margin-left: 0.7rem; font-size: 0.85rem; }
+  #exportMsg.ok { color: var(--ok); }
+  #exportMsg.warn { color: var(--warn); }
+
+  .status { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+  .status .warn { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>GPX ↔ Video Sync</h1>
+<p class="subtitle">Everything runs locally in your browser — your files are never uploaded. (Map imagery is fetched from CARTO/OpenStreetMap.)</p>
+
+<div class="pickers">
+  <label class="drop" id="videoDrop">
+    <strong>1. Select a video</strong>
+    <span>Click or drop a video file here</span>
+    <span class="filename" id="videoName"></span>
+    <input type="file" id="videoInput" accept="video/*">
+  </label>
+  <label class="drop" id="gpxDrop">
+    <strong>2. Select a GPX file</strong>
+    <span>Click or drop a .gpx file here</span>
+    <span class="filename" id="gpxName"></span>
+    <input type="file" id="gpxInput" accept=".gpx,application/gpx+xml">
+  </label>
+</div>
+
+<div class="previews">
+  <div id="videoPane"><p class="placeholder">Video preview appears here</p></div>
+  <div id="mapPane"><p class="placeholder">Map appears here</p></div>
+</div>
+
+<div class="panel">
+  <h2>GPX time offset</h2>
+  <div class="offset-row">
+    <input type="range" id="offsetSlider" min="-60" max="60" step="0.1" value="0">
+    <input type="number" id="offsetInput" step="0.1" value="0"> <span class="hint">seconds</span>
+  </div>
+  <div class="nudges">
+    <button data-nudge="-60">−60s</button>
+    <button data-nudge="-10">−10s</button>
+    <button data-nudge="-1">−1s</button>
+    <button data-nudge="-0.1">−0.1s</button>
+    <button data-nudge="0.1">+0.1s</button>
+    <button data-nudge="1">+1s</button>
+    <button data-nudge="10">+10s</button>
+    <button data-nudge="60">+60s</button>
+  </div>
+  <p class="hint" style="margin:0.5rem 0 0;">Positive offset = video starts later in the GPX recording (skips further into the track).</p>
+  <div class="coverage" id="coverage" hidden>
+    <div class="coverage-label">Alignment (GPX clock)</div>
+    <div class="coverage-track">
+      <div class="coverage-bar bar-overlap" id="barOverlap"></div>
+      <div class="coverage-bar bar-gpx" id="barGpx"></div>
+      <div class="coverage-bar bar-video" id="barVideo"></div>
+    </div>
+    <div class="coverage-legend">
+      <span class="sw" style="background:var(--track)"></span>GPX track
+      <span class="sw" style="background:var(--accent)"></span>Video span
+      <span id="overlapText"></span>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<details class="advanced">
+  <summary>Advanced settings</summary>
+  <div class="panel">
+    <div class="adv-row">
+      <label for="speedInput">GPX speed multiplier</label>
+      <input type="number" id="speedInput" min="0.01" step="0.5" value="1">
+      <span class="hint">GPX seconds per video second — e.g. 8 for an 8× timelapse video. The export compresses timestamps by this factor.</span>
+    </div>
+  </div>
+</details>
+
+<div class="panel">
+  <h2>Export</h2>
+  <fieldset id="anchorFieldset">
+    <label><input type="radio" name="anchor" value="shifted" checked>
+      Shifted GPX times <span class="hint">— keep the GPX clock; the first exported point gets the time of the GPX position aligned with the video start.</span></label>
+    <label><input type="radio" name="anchor" value="video">
+      Video file time <span class="hint">— anchor the first exported point to when the video started recording:</span></label>
+    <div id="anchorTimeWrap"><input type="datetime-local" id="anchorTime" step="1" disabled></div>
+    <label><input type="radio" name="anchor" value="epoch">
+      Start at epoch zero <span class="hint">— first exported point at 1970-01-01T00:00:00Z (relative timeline).</span></label>
+  </fieldset>
+  <button id="exportBtn" disabled>Export GPX</button>
+  <span id="exportMsg"></span>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+'use strict';
+
+// ---------- State ----------
+const state = {
+  videoFile: null,       // File
+  videoReady: false,     // metadata loaded (duration known)
+  gpxDoc: null,          // parsed XML Document (kept pristine for export)
+  gpxFileName: null,
+  points: [],            // [{lat, lon, time(ms epoch)}] sorted by time
+  offset: 0,             // seconds: gpxTime(t) = gpx0 + offset + t*speed
+  speed: 1,              // GPX seconds per video second
+};
+
+const $ = id => document.getElementById(id);
+const video = document.createElement('video');
+video.controls = true;
+video.playsInline = true;
+
+let map = null, trackLine = null, dot = null;
+
+// ---------- File selection ----------
+function wireDrop(dropEl, inputEl, handler) {
+  inputEl.addEventListener('change', () => {
+    if (inputEl.files[0]) handler(inputEl.files[0]);
+  });
+  dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('dragover'); });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('dragover'));
+  dropEl.addEventListener('drop', e => {
+    e.preventDefault();
+    dropEl.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) handler(e.dataTransfer.files[0]);
+  });
+}
+
+wireDrop($('videoDrop'), $('videoInput'), loadVideo);
+wireDrop($('gpxDrop'), $('gpxInput'), loadGpx);
+
+function loadVideo(file) {
+  state.videoFile = file;
+  state.videoReady = false;
+  $('videoName').textContent = file.name;
+  const pane = $('videoPane');
+  pane.innerHTML = '';
+  pane.appendChild(video);
+  video.src = URL.createObjectURL(file);
+}
+
+video.addEventListener('loadedmetadata', () => {
+  state.videoReady = true;
+  // Prefill "video file time": lastModified is typically the recording end.
+  const start = new Date(state.videoFile.lastModified - video.duration * 1000);
+  $('anchorTime').value = toLocalInputValue(start);
+  refresh();
+});
+video.addEventListener('timeupdate', updateDot);
+video.addEventListener('seeked', updateDot);
+video.addEventListener('play', rafLoop);
+
+function rafLoop() {
+  if (video.paused || video.ended) return;
+  updateDot();
+  requestAnimationFrame(rafLoop);
+}
+
+async function loadGpx(file) {
+  const text = await file.text();
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) {
+    setStatus(`Could not parse ${file.name} — is it a valid GPX file?`, true);
+    return;
+  }
+  const points = [];
+  for (const pt of doc.getElementsByTagName('trkpt')) {
+    const timeEl = pt.getElementsByTagName('time')[0];
+    if (!timeEl) continue;
+    const t = Date.parse(timeEl.textContent.trim());
+    if (isNaN(t)) continue;
+    points.push({ lat: parseFloat(pt.getAttribute('lat')), lon: parseFloat(pt.getAttribute('lon')), time: t });
+  }
+  if (points.length < 2) {
+    setStatus(`${file.name} has ${points.length} timestamped track point(s) — at least 2 are needed. ` +
+              `This tool requires <time> elements on track points.`, true);
+    return;
+  }
+  points.sort((a, b) => a.time - b.time);
+  state.gpxDoc = doc;
+  state.gpxFileName = file.name;
+  state.points = points;
+  $('gpxName').textContent = `${file.name} — ${points.length} points, ${fmtDuration((points[points.length-1].time - points[0].time) / 1000)}`;
+  initMap();
+  refresh();
+}
+
+// ---------- Map ----------
+function initMap() {
+  if (!map) {
+    $('mapPane').innerHTML = '<div id="map"></div>';
+    map = L.map('map');
+    // Carto's OSM-based tiles: unlike tile.openstreetmap.org, they don't require
+    // a Referer header, so the page also works when opened directly via file://
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    }).addTo(map);
+  }
+  const latlngs = state.points.map(p => [p.lat, p.lon]);
+  if (trackLine) trackLine.remove();
+  trackLine = L.polyline(latlngs, { color: '#2563eb', weight: 3, opacity: 0.8 }).addTo(map);
+  if (dot) dot.remove();
+  dot = L.circleMarker(latlngs[0], { radius: 8, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 }).addTo(map);
+  map.fitBounds(trackLine.getBounds(), { padding: [20, 20] });
+}
+
+// ---------- Sync math ----------
+// GPX epoch-ms corresponding to video time t (seconds)
+function gpxTimeAt(t) {
+  return state.points[0].time + (state.offset + t * state.speed) * 1000;
+}
+
+// Interpolated position at GPX epoch-ms time, clamped to track ends
+function positionAt(timeMs) {
+  const pts = state.points;
+  if (timeMs <= pts[0].time) return [pts[0].lat, pts[0].lon];
+  const last = pts[pts.length - 1];
+  if (timeMs >= last.time) return [last.lat, last.lon];
+  let lo = 0, hi = pts.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (pts[mid].time <= timeMs) lo = mid; else hi = mid;
+  }
+  const a = pts[lo], b = pts[hi];
+  const f = b.time === a.time ? 0 : (timeMs - a.time) / (b.time - a.time);
+  return [a.lat + f * (b.lat - a.lat), a.lon + f * (b.lon - a.lon)];
+}
+
+function updateDot() {
+  if (!dot || !state.videoReady) return;
+  dot.setLatLng(positionAt(gpxTimeAt(video.currentTime)));
+}
+
+// ---------- Controls ----------
+function setOffset(v, fromSlider) {
+  state.offset = v;
+  $('offsetInput').value = Math.round(v * 10) / 10;
+  const slider = $('offsetSlider');
+  if (!fromSlider) {
+    // Grow the slider range if the value escapes it
+    if (v < +slider.min) slider.min = Math.floor(v);
+    if (v > +slider.max) slider.max = Math.ceil(v);
+    slider.value = v;
+  }
+  refresh();
+}
+
+$('offsetSlider').addEventListener('input', e => setOffset(parseFloat(e.target.value), true));
+$('offsetInput').addEventListener('change', e => setOffset(parseFloat(e.target.value) || 0));
+document.querySelectorAll('.nudges button').forEach(btn =>
+  btn.addEventListener('click', () => setOffset(state.offset + parseFloat(btn.dataset.nudge))));
+
+$('speedInput').addEventListener('change', e => {
+  const v = parseFloat(e.target.value);
+  state.speed = (v > 0) ? v : 1;
+  e.target.value = state.speed;
+  refresh();
+});
+
+document.querySelectorAll('input[name="anchor"]').forEach(r =>
+  r.addEventListener('change', () => {
+    $('anchorTime').disabled = document.querySelector('input[name="anchor"]:checked').value !== 'video';
+  }));
+
+// ---------- Coverage / status ----------
+function overlapRange() {
+  // Returns [startMs, endMs] of video∩GPX on the GPX clock, or null
+  const gpxStart = state.points[0].time;
+  const gpxEnd = state.points[state.points.length - 1].time;
+  const vidStart = gpxTimeAt(0);
+  const vidEnd = gpxTimeAt(video.duration);
+  const s = Math.max(gpxStart, vidStart), e = Math.min(gpxEnd, vidEnd);
+  return s < e ? [s, e] : null;
+}
+
+function refresh() {
+  updateDot();
+  const ready = state.videoReady && state.points.length > 1;
+  $('coverage').hidden = !ready;
+  if (!ready) {
+    $('exportBtn').disabled = true;
+    if (!state.videoFile || !state.gpxDoc) setStatus('Select a video and a GPX file to begin.');
+    return;
+  }
+
+  // Adapt slider range to the involved durations
+  const slider = $('offsetSlider');
+  const gpxDur = (state.points[state.points.length - 1].time - state.points[0].time) / 1000;
+  const span = Math.ceil(Math.max(gpxDur, video.duration * state.speed, 60));
+  slider.min = Math.min(-span, Math.floor(state.offset));
+  slider.max = Math.max(span, Math.ceil(state.offset));
+  slider.value = state.offset;
+
+  // Coverage bar: both spans on the GPX clock
+  const gpxStart = state.points[0].time, gpxEnd = state.points[state.points.length - 1].time;
+  const vidStart = gpxTimeAt(0), vidEnd = gpxTimeAt(video.duration);
+  const lo = Math.min(gpxStart, vidStart), hi = Math.max(gpxEnd, vidEnd);
+  const pct = ms => ((ms - lo) / (hi - lo) * 100).toFixed(2) + '%';
+  const setBar = (id, s, e) => {
+    const el = $(id);
+    el.style.left = pct(s);
+    el.style.width = ((e - s) / (hi - lo) * 100).toFixed(2) + '%';
+  };
+  setBar('barGpx', gpxStart, gpxEnd);
+  setBar('barVideo', vidStart, vidEnd);
+
+  const ov = overlapRange();
+  const ovEl = $('barOverlap');
+  if (ov) {
+    ovEl.style.display = '';
+    setBar('barOverlap', ov[0], ov[1]);
+    $('overlapText').textContent = ` — overlap: ${fmtDuration((ov[1] - ov[0]) / 1000 / state.speed)} of video`;
+    $('exportBtn').disabled = false;
+    setStatus(`Video start ↔ GPX at ${new Date(vidStart).toISOString().replace('.000', '')}` +
+              (state.speed !== 1 ? ` · speed ×${state.speed}` : ''));
+  } else {
+    ovEl.style.display = 'none';
+    $('overlapText').textContent = ' — no overlap';
+    $('exportBtn').disabled = true;
+    setStatus('The video and GPX spans do not overlap at this offset — nothing to export.', true);
+  }
+}
+
+function setStatus(msg, warn) {
+  $('status').innerHTML = warn ? `<span class="warn">${msg}</span>` : msg;
+}
+
+// ---------- Export ----------
+$('exportBtn').addEventListener('click', () => {
+  const ov = overlapRange();
+  if (!ov) return;
+  const [startMs, endMs] = ov;
+  const alignStart = gpxTimeAt(0); // GPX ms aligned with video t=0
+
+  let anchorMs;
+  const mode = document.querySelector('input[name="anchor"]:checked').value;
+  if (mode === 'shifted') anchorMs = alignStart;
+  else if (mode === 'epoch') anchorMs = 0;
+  else {
+    const d = new Date($('anchorTime').value);
+    if (isNaN(d.getTime())) {
+      showExportMsg('Enter a valid video start time first.', true);
+      return;
+    }
+    anchorMs = d.getTime();
+  }
+  // The export anchors video t=0 (not the overlap start): if the GPX begins after
+  // the video, the first exported point lands at anchor + its video-time position.
+  const newTime = pMs => new Date(Math.round(anchorMs + (pMs - alignStart) / state.speed));
+
+  // Work on a clone so repeated exports stay independent
+  const doc = state.gpxDoc.cloneNode(true);
+  const segs = Array.from(doc.getElementsByTagName('trkseg'));
+  let kept = 0;
+
+  for (const seg of segs) {
+    const pts = Array.from(seg.getElementsByTagName('trkpt'));
+    const parsed = pts.map(el => {
+      const timeEl = el.getElementsByTagName('time')[0];
+      const t = timeEl ? Date.parse(timeEl.textContent.trim()) : NaN;
+      return { el, timeEl, t };
+    });
+
+    // Interpolated boundary points where the video span cuts through this segment
+    kept += insertBoundary(doc, seg, parsed, startMs);
+    kept += insertBoundary(doc, seg, parsed, endMs);
+
+    for (const p of parsed) {
+      if (isNaN(p.t) || p.t < startMs || p.t > endMs) {
+        p.el.remove();
+      } else {
+        p.timeEl.textContent = newTime(p.t).toISOString();
+        kept++;
+      }
+    }
+    if (seg.getElementsByTagName('trkpt').length === 0) {
+      const trk = seg.parentElement;
+      seg.remove();
+      if (trk && trk.tagName === 'trk' && trk.getElementsByTagName('trkseg').length === 0) trk.remove();
+    }
+  }
+
+  if (kept === 0) {
+    showExportMsg('No track points fall within the video span.', true);
+    return;
+  }
+
+  // Refresh <metadata><time> if present
+  const metaTime = doc.querySelector('metadata > time');
+  if (metaTime) metaTime.textContent = newTime(startMs).toISOString();
+
+  const xml = new XMLSerializer().serializeToString(doc);
+  const blob = new Blob([xml.startsWith('<?xml') ? xml : '<?xml version="1.0" encoding="UTF-8"?>\n' + xml],
+                        { type: 'application/gpx+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = state.gpxFileName.replace(/\.gpx$/i, '') + '-synced.gpx';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showExportMsg(`Exported ${kept} points (${fmtDuration((endMs - startMs) / 1000 / state.speed)} of video).`);
+
+  // Boundary helper: if boundaryMs falls strictly between two consecutive points of
+  // this segment, insert an interpolated trkpt there (lat/lon/ele/time only).
+  // Returns the number of points inserted (0 or 1).
+  function insertBoundary(doc, seg, parsed, boundaryMs) {
+    for (let i = 0; i < parsed.length - 1; i++) {
+      const a = parsed[i], b = parsed[i + 1];
+      if (isNaN(a.t) || isNaN(b.t)) continue;
+      if (a.t < boundaryMs && boundaryMs < b.t) {
+        const f = (boundaryMs - a.t) / (b.t - a.t);
+        const lerp = (x, y) => x + f * (y - x);
+        const pt = doc.createElementNS(seg.namespaceURI, 'trkpt');
+        pt.setAttribute('lat', lerp(+a.el.getAttribute('lat'), +b.el.getAttribute('lat')).toFixed(7));
+        pt.setAttribute('lon', lerp(+a.el.getAttribute('lon'), +b.el.getAttribute('lon')).toFixed(7));
+        const eleA = a.el.getElementsByTagName('ele')[0], eleB = b.el.getElementsByTagName('ele')[0];
+        if (eleA && eleB) {
+          const ele = doc.createElementNS(seg.namespaceURI, 'ele');
+          ele.textContent = lerp(+eleA.textContent, +eleB.textContent).toFixed(2);
+          pt.appendChild(ele);
+        }
+        const time = doc.createElementNS(seg.namespaceURI, 'time');
+        time.textContent = newTime(boundaryMs).toISOString();
+        pt.appendChild(time);
+        seg.insertBefore(pt, b.el);
+        return 1;
+      }
+    }
+    return 0;
+  }
+});
+
+function showExportMsg(msg, warn) {
+  const el = $('exportMsg');
+  el.textContent = msg;
+  el.className = warn ? 'warn' : 'ok';
+}
+
+// ---------- Utils ----------
+function fmtDuration(secs) {
+  secs = Math.round(secs);
+  const h = Math.floor(secs / 3600), m = Math.floor(secs % 3600 / 60), s = secs % 60;
+  return (h ? h + 'h ' : '') + (h || m ? m + 'm ' : '') + s + 's';
+}
+
+function toLocalInputValue(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T` +
+         `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+setStatus('Select a video and a GPX file to begin.');
+</script>
+</body>
+</html>
