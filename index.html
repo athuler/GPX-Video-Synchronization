@@ -240,6 +240,74 @@ video.playsInline = true;
 
 let map = null, trackLine = null, dot = null;
 
+// ---------- Persistence (restore files & settings across refreshes) ----------
+// File objects are structured-cloneable, so they can be kept in IndexedDB and
+// handed back after a reload. Chromium stores a reference to the on-disk file
+// (no copy); if the file has since moved or changed, reading it fails and we
+// fall back to asking again. All of this is best-effort — a browser that
+// blocks storage just loses the convenience.
+function idb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('gpx-video-sync', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('files');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbPut(key, val) {
+  try { (await idb()).transaction('files', 'readwrite').objectStore('files').put(val, key); }
+  catch (e) {}
+}
+async function idbGet(key) {
+  try {
+    const d = await idb();
+    return await new Promise((resolve, reject) => {
+      const r = d.transaction('files').objectStore('files').get(key);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  } catch (e) { return undefined; }
+}
+async function idbDelete(key) {
+  try { (await idb()).transaction('files', 'readwrite').objectStore('files').delete(key); }
+  catch (e) {}
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem('gpx-video-sync-settings', JSON.stringify({
+      offset: state.offset,
+      speed: state.speed,
+      flipLon: state.flipLon,
+      anchor: document.querySelector('input[name="anchor"]:checked').value,
+    }));
+  } catch (e) {}
+}
+
+async function restoreSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem('gpx-video-sync-settings') || 'null');
+    if (s) {
+      state.speed = s.speed > 0 ? s.speed : 1;
+      $('speedInput').value = state.speed;
+      state.flipLon = !!s.flipLon;
+      $('flipLonInput').checked = state.flipLon;
+      const anchor = document.querySelector(`input[name="anchor"][value="${s.anchor}"]`);
+      if (anchor) { anchor.checked = true; $('anchorTime').disabled = s.anchor !== 'video'; }
+      setOffset(+s.offset || 0);
+    }
+  } catch (e) {}
+  const [vf, gf] = await Promise.all([idbGet('video'), idbGet('gpx')]);
+  if (vf instanceof File) loadVideo(vf, true);
+  if (gf instanceof File) {
+    try { await loadGpx(gf, true); }
+    catch (e) {
+      idbDelete('gpx');
+      setStatus('Could not restore the previous GPX file — please select it again.', true);
+    }
+  }
+}
+
 // ---------- File selection ----------
 function wireDrop(dropEl, inputEl, handler) {
   inputEl.addEventListener('change', () => {
@@ -257,9 +325,11 @@ function wireDrop(dropEl, inputEl, handler) {
 wireDrop($('videoDrop'), $('videoInput'), loadVideo);
 wireDrop($('gpxDrop'), $('gpxInput'), loadGpx);
 
-function loadVideo(file) {
+function loadVideo(file, restored) {
   state.videoFile = file;
   state.videoReady = false;
+  state.videoRestored = !!restored;
+  if (!restored) idbPut('video', file);
   $('videoName').textContent = file.name;
   const pane = $('videoPane');
   pane.innerHTML = '';
@@ -274,6 +344,14 @@ video.addEventListener('loadedmetadata', () => {
   $('anchorTime').value = toLocalInputValue(start);
   refresh();
 });
+video.addEventListener('error', () => {
+  state.videoReady = false;
+  $('videoPane').innerHTML = '<p class="placeholder">Could not load the video' +
+    (state.videoRestored ? ' from the previous session — please select it again.' : '.') + '</p>';
+  $('videoName').textContent = '';
+  if (state.videoRestored) idbDelete('video');
+  refresh();
+});
 video.addEventListener('timeupdate', updateDot);
 video.addEventListener('seeked', updateDot);
 video.addEventListener('play', rafLoop);
@@ -284,8 +362,9 @@ function rafLoop() {
   requestAnimationFrame(rafLoop);
 }
 
-async function loadGpx(file) {
+async function loadGpx(file, restored) {
   const text = await file.text();
+  if (!restored) idbPut('gpx', file);
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) {
     setStatus(`Could not parse ${file.name} — is it a valid GPX file?`, true);
@@ -380,6 +459,7 @@ function setOffset(v, fromSlider) {
     if (v > +slider.max) slider.max = Math.ceil(v);
     slider.value = v;
   }
+  saveSettings();
   refresh();
 }
 
@@ -390,6 +470,7 @@ document.querySelectorAll('.nudges button').forEach(btn =>
 
 $('flipLonInput').addEventListener('change', e => {
   state.flipLon = e.target.checked;
+  saveSettings();
   applyLonFlip();
 });
 
@@ -397,12 +478,14 @@ $('speedInput').addEventListener('change', e => {
   const v = parseFloat(e.target.value);
   state.speed = (v > 0) ? v : 1;
   e.target.value = state.speed;
+  saveSettings();
   refresh();
 });
 
 document.querySelectorAll('input[name="anchor"]').forEach(r =>
   r.addEventListener('change', () => {
     $('anchorTime').disabled = document.querySelector('input[name="anchor"]:checked').value !== 'video';
+    saveSettings();
   }));
 
 // ---------- Coverage / status ----------
@@ -603,6 +686,7 @@ function toLocalInputValue(d) {
 }
 
 setStatus('Select a video and a GPX file to begin.');
+restoreSession();
 </script>
 </body>
 </html>
