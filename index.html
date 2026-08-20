@@ -239,6 +239,8 @@ video.controls = true;
 video.playsInline = true;
 
 let map = null, trackLine = null, dot = null;
+let following = false;   // map locked to the dot; released by a manual drag
+const FOLLOW_ZOOM = 16;  // minimum zoom while following
 
 // ---------- Persistence (restore files & settings across refreshes) ----------
 // File objects are structured-cloneable, so they can be kept in IndexedDB and
@@ -354,7 +356,11 @@ video.addEventListener('error', () => {
 });
 video.addEventListener('timeupdate', updateDot);
 video.addEventListener('seeked', updateDot);
-video.addEventListener('play', rafLoop);
+video.addEventListener('play', () => {
+  following = true;
+  if (map && dot) map.setView(dot.getLatLng(), Math.max(map.getZoom(), FOLLOW_ZOOM), { animate: false });
+  rafLoop();
+});
 
 function rafLoop() {
   if (video.paused || video.ended) return;
@@ -435,6 +441,8 @@ function initMap() {
       subdomains: 'abcd',
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     }).addTo(map);
+    // A manual drag releases the follow lock; the next play re-engages it
+    map.on('dragstart', () => { following = false; });
   }
   const latlngs = state.points.map(p => [p.lat, p.lon]);
   if (trackLine) trackLine.remove();
@@ -468,7 +476,9 @@ function positionAt(timeMs) {
 
 function updateDot() {
   if (!dot || !state.videoReady) return;
-  dot.setLatLng(positionAt(gpxTimeAt(video.currentTime)));
+  const ll = positionAt(gpxTimeAt(video.currentTime));
+  dot.setLatLng(ll);
+  if (following) map.setView(ll, map.getZoom(), { animate: false });
 }
 
 // ---------- Controls ----------
