@@ -171,6 +171,27 @@
 
   .status { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
   .status .warn { color: var(--warn); }
+
+  footer.credits {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1rem 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  footer.credits a { color: var(--accent); text-decoration: none; }
+  footer.credits a:hover { text-decoration: underline; }
+  footer.credits .donate {
+    display: inline-block;
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  footer.credits .donate:hover { background: var(--accent-soft); text-decoration: none; }
 </style>
 </head>
 <body>
@@ -260,6 +281,11 @@
   <button id="exportBtn" disabled>Export GPX</button>
   <span id="exportMsg"></span>
 </div>
+
+<footer class="credits">
+  <span>Made by <a href="https://andreithuler.com" target="_blank" rel="noopener">Andrei Thüler</a></span>
+  <a class="donate" href="https://ko-fi.com/andreithuler" target="_blank" rel="noopener">&#x2764;&#xFE0F; Donate</a>
+</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
