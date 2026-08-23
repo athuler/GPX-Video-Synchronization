@@ -884,7 +884,8 @@ $('exportBtn').addEventListener('click', () => {
                         { type: 'application/gpx+xml' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = state.gpxFileName.replace(/\.gpx$/i, '') + '-synced.gpx';
+  // Name the export after the video so overlay tools pair them automatically
+  a.download = state.videoFile.name.replace(/\.[^.]+$/, '') + '.gpx';
   a.click();
   URL.revokeObjectURL(a.href);
   showExportMsg(`Exported ${kept} points (${fmtDuration((endMs - startMs) / 1000 / state.speed)} of video).`);
