@@ -1,6 +1,6 @@
 # GPX/Video Synchronization
 
-A simple web tool to synchronize a video file with a GPX track and export a retimed GPX. Everything runs locally in your browser — your files are never uploaded (only the CARTO/OpenStreetMap background tiles are fetched from the internet).
+A simple web tool to synchronize a video file with a GPX track and export a retimed GPX. Everything runs locally in your browser — your files are never uploaded (only the OpenStreetMap background tiles are fetched from the internet).
 
 Try it now at [gpxvideosync.andreithuler.com/](https://gpxvideosync.andreithuler.com/).
 

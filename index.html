@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>GPX ↔ Video Sync</title>
 <meta name="description" content="Free online tool to synchronize a GPX track with a video. Preview the route on a map as the video plays, adjust the time offset, and export a retimed GPX — all locally in your browser, no upload.">
 <link rel="canonical" href="https://gpxvideosync.andreithuler.com/">
@@ -601,12 +602,15 @@ function initMap() {
     $('mapPane').innerHTML = '<div id="map"></div>';
     // rotate options are ignored gracefully if the leaflet-rotate CDN script failed
     map = L.map('map', { rotate: true, rotateControl: false, touchRotate: false, shiftKeyRotate: false });
-    // Carto's OSM-based tiles: unlike tile.openstreetmap.org, they don't require
-    // a Referer header, so the page also works when opened directly via file://
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    // OpenStreetMap's standard tiles need no API key (CARTO's raster basemaps
+    // require one since Sept 2026). The OSM tile usage policy expects browsers
+    // to send a Referer, so the tiles explicitly opt into a policy that always
+    // sends the page origin, even if the embedding context is stricter.
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 20,
-      subdomains: 'abcd',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      maxNativeZoom: 19,
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
     // A manual drag releases the follow lock; the next play re-engages it
     map.on('dragstart', () => { following = false; });
